@@ -1,0 +1,294 @@
+\documentclass[12pt, letterpaper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{parskip}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{float}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=blue,
+    citecolor=black
+}
+
+\titleformat{\section}{\large\bfseries}{}{0em}{}[\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries}{}{0em}{}
+
+\title{\textbf{Algorithmic Fairness Audit} \\[0.4em]
+       \large Student Exam Score Prediction \\
+       Kaggle Playground Series S6E1}
+\author{George Buck \and Sinclair Madden}
+\date{May 2026}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Dataset}
+
+\subsection{Source and Size}
+
+The dataset is drawn from Kaggle Playground Series Season 6, Episode 1 (S6E1),
+a synthetic tabular regression competition centred on student academic
+performance. The training set contains \textbf{630,000 rows} and \textbf{11
+features}; the target variable is \texttt{exam\_score}, a continuous value on
+the interval $[0, 100]$.
+
+\subsection{Features}
+
+\begin{table}[H]
+\centering
+\caption{Feature descriptions}
+\begin{tabular}{@{}llp{7cm}@{}}
+\toprule
+\textbf{Feature} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\texttt{age}               & Numeric      & Student age (17--24) \\
+\texttt{study\_hours}      & Numeric      & Average daily study hours \\
+\texttt{class\_attendance} & Numeric      & Percentage of classes attended \\
+\texttt{sleep\_hours}      & Numeric      & Average nightly sleep hours \\
+\texttt{gender}            & Categorical  & Self-identified gender (female, male, other) \\
+\texttt{course}            & Categorical  & Enrolled academic programme \\
+\texttt{internet\_access}  & Categorical  & Reliable internet connection (yes/no) \\
+\texttt{sleep\_quality}    & Categorical  & Self-reported sleep quality \\
+\texttt{study\_method}     & Categorical  & Primary study method \\
+\texttt{facility\_rating}  & Categorical  & Student rating of campus facilities \\
+\texttt{exam\_difficulty}  & Categorical  & Self-reported exam difficulty \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Descriptive Statistics}
+
+\begin{table}[H]
+\centering
+\caption{Key numeric feature statistics (training set, $n = 630{,}000$)}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+\textbf{Feature} & \textbf{Mean} & \textbf{Std} & \textbf{Min} & \textbf{Max} \\
+\midrule
+\texttt{age}               & 20.55 & 2.26 & 17.0 & 24.0 \\
+\texttt{study\_hours}      &  4.00 & 2.36 &  0.1 & 14.0 \\
+\texttt{class\_attendance} & 72.0  & 17.4 & 40.6 & 100.0 \\
+\texttt{sleep\_hours}      &  7.07 & 1.74 &  4.1 & 12.0 \\
+\texttt{exam\_score}       & 62.5  & 18.9 &  0.0 & 100.0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Notable distributional facts:
+\begin{itemize}[noitemsep]
+    \item \textbf{Internet access:} 92\% of students report having access; 8\% do not.
+    \item \textbf{Gender:} Roughly balanced across female ($\approx$33\%), male ($\approx$33\%), and other ($\approx$33\%) in both training and test splits.
+    \item \textbf{Study hours} is the single numeric feature most correlated with exam score ($r = 0.762$); class attendance is second ($r = 0.361$). Age is essentially uncorrelated ($r = 0.010$).
+\end{itemize}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Methods}
+
+\subsection{Original Model (Audited)}
+
+The model under audit is a \textbf{Histogram-Based Gradient Boosting Regressor}
+(\texttt{HistGradientBoostingRegressor}) from \texttt{scikit-learn}, trained
+with the following hyperparameters:
+
+\begin{center}
+\texttt{max\_iter=1000,\ learning\_rate=0.05,\ max\_depth=10,\ random\_state=42}
+\end{center}
+
+Pre-processing used \texttt{LabelEncoder} (alphabetical mapping) applied
+independently to each of the seven categorical columns. The data were split
+80/20 into training and test sets (\texttt{random\_state=42}). \textbf{No
+changes were made to the model or its training pipeline during this audit.}
+
+\subsection{Exploratory Data Analysis and Statistical Tests}
+
+Prior to the fairness audit, the following statistical tests were applied to the
+raw training data:
+
+\begin{itemize}[noitemsep]
+    \item \textbf{Pairwise correlation heatmap} across all numeric features.
+    \item \textbf{Independent-samples $t$-test:} internet access group vs.\ exam score.
+    \item \textbf{One-way ANOVA:} study method vs.\ exam score, with \textbf{Tukey HSD} post-hoc comparisons across all method pairs.
+    \item \textbf{Chi-square test of independence:} gender $\times$ exam difficulty.
+    \item \textbf{OLS regression:} numeric features regressed on exam score as a linear baseline.
+\end{itemize}
+
+\subsection{Fairness Audit}
+
+Seven fairness tests were applied to the frozen, pre-trained model using the held-out
+test split ($n = 126{,}000$). The pass/fail threshold for binary classification tasks
+was set at the training-set mean exam score (62.5). Protected attributes evaluated
+were \texttt{gender} and \texttt{internet\_access} (as a socioeconomic proxy).
+
+\begin{table}[H]
+\centering
+\caption{Fairness tests applied}
+\begin{tabular}{@{}clp{8cm}@{}}
+\toprule
+\textbf{\#} & \textbf{Test} & \textbf{What it measures} \\
+\midrule
+1 & Data-level bias         & Are raw score distributions skewed across gender groups? \\
+2 & Error parity            & Are MAE, RMSE, and prediction bias equal across groups? \\
+3 & Demographic parity      & Do all groups receive the same predicted pass rate? \\
+4 & Equal opportunity / equalized odds & Are TPR and FPR equal across groups? \\
+5 & Counterfactual fairness & Does flipping gender alone change predictions? \\
+6 & Permutation feature importance & Does the model rely on gender as a predictor? \\
+7 & Socioeconomic proxy     & Does internet access predict higher predicted scores? \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{SHAP Analysis}
+
+\texttt{shap.TreeExplainer} was used to compute exact Shapley values for a
+5,000-row random sample of the test set (\texttt{random\_state=7}). Because
+\texttt{HistGradientBoostingRegressor} is a gradient-boosted tree ensemble,
+\texttt{TreeExplainer} produces exact (non-approximated) decompositions.
+Results were visualised as global bar charts, beeswarm plots, and dependence
+plots for the two strongest features. A helper function,
+\texttt{explain\_student()}, provides per-student prediction explanations.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Outcomes}
+
+\subsection{Model Performance}
+
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+$R^2$ (test set) & 0.7836 \\
+MAE (test set)   & 6.998 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{EDA and Statistical Test Results}
+
+\begin{itemize}[noitemsep]
+    \item \textbf{Internet access vs.\ exam score:} The independent-samples $t$-test
+          returned $t = 0.355$, $p = 0.723$, indicating no statistically significant
+          difference in mean exam scores between students with and without internet access.
+    \item \textbf{Study method vs.\ exam score:} One-way ANOVA returned $F = 8{,}304$,
+          $p \approx 0$. Tukey HSD confirmed that every pair of study methods differed
+          significantly ($\alpha = 0.05$), with self-study associated with the lowest
+          mean scores and coaching with the highest.
+    \item \textbf{Gender $\times$ exam difficulty:} The chi-square test returned
+          $\chi^2 = 40.8$, $p = 2.9 \times 10^{-8}$. Although statistically significant
+          at this sample size, the effect size is negligible given $n = 630{,}000$.
+\end{itemize}
+
+\subsection{Fairness Audit Results}
+
+\begin{table}[H]
+\centering
+\caption{Fairness audit summary}
+\begin{tabular}{@{}lllc@{}}
+\toprule
+\textbf{Metric} & \textbf{Value} & \textbf{Benchmark} & \textbf{Pass} \\
+\midrule
+Gender MAE spread (max $-$ min)              & 0.023   & $\approx 0$ is fair        & \checkmark \\
+Gender bias spread (max $-$ min)             & 0.062   & $\approx 0$ is fair        & \checkmark \\
+Demographic parity diff (male $-$ female)    & $-$0.003 & $|$diff$|$ $< 0.05$       & \checkmark \\
+Equal opportunity diff (male $-$ female)     & $-$0.005 & $|$diff$|$ $< 0.05$       & \checkmark \\
+Counterfactual mean $|\Delta|$ (gender flip) & 0.067   & 0 = perfectly fair         & \checkmark \\
+Predictions shifted $>1$ pt by gender flip   & 0.0\%   & ---                        & \checkmark \\
+Gender permutation importance rank           & 9th/11  & Low rank = fair            & \checkmark \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Error parity by gender.}
+MAE varied by at most 0.023 points across gender groups (female: 7.00, male: 6.99,
+other: 7.01). Prediction bias was similarly uniform (female: $-$0.04, male: $-$0.05,
+other: $+$0.01). Both spreads are negligible relative to the model's overall MAE of 6.998.
+
+\paragraph{Demographic parity.}
+Predicted pass rates were 50.7\% (female), 50.4\% (male), and 51.0\% (other), against
+actual rates of 50.2\%, 50.4\%, and 50.6\% respectively. The maximum demographic parity
+difference was 0.006, well within the 0.05 benchmark of Feldman et al.\ (2015).
+
+\paragraph{Equal opportunity and equalized odds.}
+TPR ranged from 0.863 (male) to 0.874 (other); FPR ranged from 0.137 (other) to
+0.142 (female). The maximum equal opportunity difference across any pair of groups
+was 0.011, well within the 0.05 benchmark of Hardt, Price, and Srebro (2016).
+
+\paragraph{Counterfactual fairness.}
+Flipping gender from female to male (holding all other features fixed, $n = 2{,}000$)
+produced a mean prediction shift of $+$0.001, a mean absolute shift of 0.067, and a
+maximum absolute shift of 0.900. No prediction changed by more than 1 point.
+
+\paragraph{Socioeconomic proxy.}
+The actual exam score gap between students with and without internet access was
+$+$0.062 points (yes: 62.61, no: 62.55). The predicted gap was $-$0.059 points.
+The reported gap amplification factor of $-$0.961 is numerically unreliable: with
+an actual gap of only $\approx 0.06$ points, the ratio \texttt{pred\_gap / actual\_gap}
+is highly sensitive to near-zero denominators. The substantive finding is that both
+actual and predicted gaps are negligibly small in absolute terms, consistent with
+the $t$-test result ($p = 0.723$).
+
+\subsection{SHAP Feature Importance}
+
+\begin{table}[H]
+\centering
+\caption{Permutation importance and mean $|$SHAP$|$ (ranked)}
+\begin{tabular}{@{}lrl@{}}
+\toprule
+\textbf{Feature} & \textbf{Perm.\ importance ($\Delta R^2$)} & \textbf{Note} \\
+\midrule
+\texttt{study\_hours}      & 1.030  & Primary driver \\
+\texttt{class\_attendance} & 0.165  & \\
+\texttt{sleep\_quality}    & 0.077  & \\
+\texttt{study\_method}     & 0.067  & \\
+\texttt{facility\_rating}  & 0.047  & \\
+\texttt{sleep\_hours}      & 0.030  & \\
+\texttt{age}               & 0.001  & \\
+\texttt{course}            & 0.0003 & \\
+\texttt{gender}            & 0.0002 & Protected attribute \\
+\texttt{exam\_difficulty}  & 0.0000 & \\
+\texttt{internet\_access}  & 0.0000 & Socioeconomic proxy \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+SHAP beeswarm and dependence plots confirm that \texttt{study\_hours} dominates
+model predictions: higher study hours are associated with large positive SHAP values,
+with the effect non-linear at the extremes. \texttt{class\_attendance} is the second
+most influential feature. Both \texttt{gender} and \texttt{internet\_access} have
+mean $|$SHAP$|$ values indistinguishable from zero, confirming they contribute
+negligibly to any individual prediction.
+
+\subsection{Overall Assessment}
+
+The model shows \textbf{no meaningful disparity} across gender groups on any
+fairness criterion tested. Both protected attributes (\texttt{gender} and
+\texttt{internet\_access}) rank last in permutation importance and SHAP magnitude.
+Counterfactual gender flips produce negligible prediction changes. Demographic
+parity and equal opportunity differences are an order of magnitude below standard
+fairness thresholds. The dominant driver of predicted exam score is
+\texttt{study\_hours}, followed by \texttt{class\_attendance} --- both
+effort-based, non-demographic features.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{References}
+
+\begin{itemize}[noitemsep]
+    \item Feldman, M., Friedler, S., Moeller, J., Scheidegger, C., \& Venkatasubramanian, S. (2015). Certifying and removing disparate impact. \textit{Proceedings of KDD 2015}.
+    \item Hardt, M., Price, E., \& Srebro, N. (2016). Equality of opportunity in supervised learning. \textit{Advances in Neural Information Processing Systems (NeurIPS) 2016}.
+\end{itemize}
+
+\end{document}
